@@ -10,7 +10,7 @@ This rule defines how to automatically extract the access token from the MCP con
 
 ---
 
-## Access Token Extraction
+## Access Token Extraction 
 
 The CLI handles access token extraction automatically. This happens in the following way:
 
