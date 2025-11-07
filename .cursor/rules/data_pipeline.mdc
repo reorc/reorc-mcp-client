@@ -1,0 +1,37 @@
+---
+alwaysApply: true
+---
+# Building Data Pipeline workflow
+
+## MUST FOLLOW BELOW RULES WHEN CREATING PIPELINE
+
+### 1. Ask user to provide data sources, credentials (if necessary)
+#### 1.1. Get Pipeline Context (BEFORE planning)
+- Call `mcp_reorc-mcp_pipeline_context` to get pipeline context
+- Use this context to inform your planning decisions
+### 2. Describe your plan to user
+2.1 MUST explain step by step in details what would you do
+2.2 You MUST ask user: `If you're satisfied with this plan, type "yes" to continue with the implementation!`
+2.3 ONLY CONTINUE when user type `yes`
+### 3. Testing code
+#### 3.1. Testing and profiling data in local environemnt
+1. Using Python to profile data source, test python code in local-profiling-data folder
+- Install necessary libraries to support testing, mining, profiling data such as pandas, numpy, etc.
+- Download data source to local if necessary (make sure that the files MUST have expiration time, or it MUST be removed after that)
+- Always test code in local before create/update pipeline in server via mcp tools
+- Not all of codes can be executed in local env. Expecially, recurvedata library is internal, in privated repository. It contains get database connection, credentials, assume that, you can connection database to ingest, upload data
+- Use necessary data tools such as pandas, numpy, etc to explore the data
+### 4. Testing code in server
+- After the code have been tested in local environment, you MUST TO test full code by `validate_python_operator_script` tool to ensure the code works properly in server
+### 5. Create Pipeline in Server via reorc-mcp tools
+1. DO NOT create pipeline and schedule in local machine
+2. NO scheduling unless explicitly requested by user
+3. Create pipeline, operators and graph by reorc-mcp tools
+- operators are INDEPENDENT, they CAN NOT use upstream operator result. The operator result MUST be storaged to database to reuse in downstream
+- Extract, transform and load processes of 1 model MUST be in 1 operator.
+### 6. Clean Up
+1. Remove all files in local-profiling-data
+
+# Create, Update Pipeline Jobs
+1. If timezone is not mentioned, use local machine timezone as default timezone
+2. If start date is not mentioned, use today as default start date

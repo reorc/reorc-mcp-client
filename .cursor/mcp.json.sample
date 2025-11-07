@@ -1,0 +1,15 @@
+{
+  "mcpServers": {
+    "reorc-mcp": {
+      "transport": "sse",
+      "url": "https://mcp.test.reorc.cloud/mcp?access_token={YOUR_ACCESS_TOKEN}",
+      "auth": {
+        "defaultCredentials": {
+          "email": "{YOUR_REORC_ACCOUNT}",
+          "password": "{YOUR_REORC_PASSWORD}",
+          "tenant_domain": "{TENANT_DOMAIN}"
+        }
+      }
+    }
+  }
+}

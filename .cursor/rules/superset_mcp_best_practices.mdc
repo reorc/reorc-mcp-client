@@ -1,0 +1,465 @@
+---
+alwaysApply: true
+---
+
+# Superset MCP Best Practices
+ 
+## Description
+Best practices for creating charts and dashboards in Superset using MCP tools to avoid common errors.
+
+---
+
+## 1. Metric Validation Rules
+
+### MANDATORY: Always Validate Available Metrics Before Chart Creation
+
+**Problem**: Creating charts with non-existent metrics (like `sum__gmv`) causes TypeErrors and chart failures.
+
+**Solution**: Always follow this workflow:
+
+1. **Check Dataset Schema First**:
+   ```python
+   # Get dataset details to see available columns and metrics
+   tool: mcp_superset_dataset_get_by_id(dataset_id=dataset_id)
+   ```
+
+2. **Use Only Verified Metrics**:
+   - For Simple/Custom SQL metrics, check if columns are defined in the dataset first
+
+3. **Alternative - Use Raw Columns with Aggregation**:
+   Instead of assuming metric names exist, specify metrics explicitly:
+   ```python
+   "metrics": [{"expressionType": "SIMPLE", "column": {"column_name": "gmv"}, "aggregate": "SUM", "label": "Total GMV"}]
+   ```
+
+4. **Fallback to Basic Metrics**:
+   If unsure about column-specific metrics, use safe defaults:
+   - `count` (row count - always available)
+   - `COUNT(*)` (universal count metric)
+
+## 2. Error Handling and Recovery (CRITICAL REQUIREMENT)
+
+### MANDATORY: Fix All MCP Tool Errors Before Proceeding
+
+**Rule**: If any Superset MCP tool call returns an error, it MUST be resolved before calling additional MCP tools.
+
+**Problem**: Cascading errors from unresolved MCP failures can cause:
+- Data integrity issues
+- Incomplete operations  
+- Resource conflicts
+- Authentication token expiration
+- Dashboard/chart corruption
+
+**Solution**: Always follow this error handling workflow:
+
+### Error Detection and Response
+```python
+# CORRECT: Handle errors immediately
+try:
+    chart_result = mcp_superset_chart_create(
+        slice_name="Revenue Chart",
+        datasource_id=dataset_id,
+        viz_type="bar",
+        params={...}
+    )
+    
+    # Check for errors in response
+    if 'error' in chart_result.get('result', {}):
+        print(f"ERROR: Chart creation failed: {chart_result['result']['error']}")
+        # STOP HERE - DO NOT proceed with additional MCP calls
+        return
+        
+    # Only proceed if successful
+    chart_id = chart_result['result']['id']
+    
+except Exception as e:
+    print(f"CRITICAL ERROR: MCP call failed: {str(e)}")
+    # STOP HERE - DO NOT make additional MCP calls
+    return
+```
+
+### Common Error Types and Fixes
+
+1. **Authentication Errors (401/403)**:
+   ```python
+   # Fix: Re-authenticate before retrying
+   auth_result = mcp_superset_auth_authenticate_user()
+   if auth_result.get('result', {}).get('access_token'):
+       # Retry the failed operation
+   ```
+
+2. **Dataset/Resource Not Found (404)**:
+   ```python
+   # Fix: Verify resource exists
+   dataset_result = mcp_superset_dataset_get_by_id(dataset_id)
+   if 'error' in dataset_result.get('result', {}):
+       # Create or find correct dataset first
+   ```
+
+3. **Validation Errors (400)**:
+   ```python
+   # Fix: Check and correct parameters
+   # - Validate metric expressions
+   # - Verify column names exist
+   # - Check data types match requirements
+   ```
+
+4. **Server Errors (500)**:
+   ```python
+   # Fix: Check data integrity and retry
+   # - Verify database connection
+   # - Check for data corruption
+   # - Wait and retry with exponential backoff
+   ```
+
+### Error Recovery Workflow
+
+1. **STOP Immediately**: Do not continue with planned MCP operations
+2. **Analyze Error**: Read the full error message and identify root cause
+3. **Fix Root Cause**: Address the underlying issue (auth, data, config, etc.)
+4. **Verify Fix**: Test the fix with a simple operation
+5. **Resume Operations**: Only continue after successful verification
+
+### Example: Proper Error Handling in Chart Creation Workflow
+```python
+def create_chart_with_error_handling():
+    # Step 1: Create chart with error checking
+    chart_result = mcp_superset_chart_create(...)
+    if 'error' in chart_result.get('result', {}):
+        print(f"Chart creation failed: {chart_result['result']['error']}")
+        return None  # STOP - do not proceed
+    
+    chart_id = chart_result['result']['id']
+    
+    # Step 2: Only refresh columns if chart creation succeeded
+    refresh_result = mcp_superset_dataset_refresh_columns(dataset_id=dataset_id)
+    if 'error' in refresh_result.get('result', {}):
+        print(f"Column refresh failed: {refresh_result['result']['error']}")
+        # Clean up: Delete the created chart before stopping
+        mcp_superset_chart_delete(chart_id=chart_id)
+        return None  # STOP
+    
+    # Step 3: Only add to dashboard if all previous steps succeeded
+    dashboard_result = mcp_superset_dashboard_update(...)
+    if 'error' in dashboard_result.get('result', {}):
+        print(f"Dashboard update failed: {dashboard_result['result']['error']}")
+        # Clean up as needed
+        return None  # STOP
+    
+    return chart_id  # Success
+```
+
+**Key Principle**: **NEVER ignore or bypass MCP tool errors**. Each error represents a real issue that will compound if left unresolved.
+
+## 3. Chart Validation
+
+### Refresh Dataset Columns (CRITICAL REQUIREMENT)
+**ALWAYS perform this step after creating any chart:**
+
+```python
+# Refresh dataset columns from source database table
+tool: mcp_superset_dataset_refresh_columns(dataset_id=dataset_id)
+```
+
+### Why This is Mandatory:
+- **Schema Synchronization**: Ensures dataset columns match the current database table structure
+- **New Columns Access**: Makes any recently added database columns available in Superset
+- **Column Updates**: Reflects modified column types, constraints, or properties
+- **Chart Compatibility**: Prevents "column not found" errors in charts
+- **Metric Availability**: Ensures all possible metrics are available for chart creation
+
+### When to ALWAYS Use:
+✅ **Before creating any chart that uses a dataset**  
+✅ **After database schema changes**  
+✅ **When charts show "column not found" errors**  
+✅ **Before creating complex charts with multiple metrics**  
+✅ **When troubleshooting chart configuration issues**
+
+### Integration with Chart Creation Workflow:
+```python
+# Complete chart creation and validation workflow
+chart_result = mcp_superset_chart_create(...)
+chart_id = chart_result['result']['id']
+
+
+# MANDATORY - Refresh dataset columns
+mcp_superset_dataset_refresh_columns(dataset_id=dataset_id)
+
+# Verify the refresh worked
+dataset_info = mcp_superset_dataset_get_by_id(dataset_id)
+print(f"Dataset now has {len(dataset_info['result']['columns'])} columns available")
+```
+
+**This step is NON-OPTIONAL and must be performed after every chart creation to ensure optimal chart performance and prevent schema-related errors.**
+
+### Chart Type Restrictions for Initial Creation (CRITICAL REQUIREMENT)
+
+**ONLY create these chart types via MCP for initial chart creation:**
+
+**Supported Init Chart Types:**
+- `table` - Data table view
+- `pie` - Pie charts
+
+**Rationale:**
+- **Proven Compatibility**: These four chart types have the most stable MCP API support
+- **Minimal Configuration**: Require fewer specialized parameters that could cause failures
+- **Wide Data Support**: Work with most dataset types and metric configurations
+- **Error Prevention**: Reduces risk of visualization-specific API errors
+- **Fast Iteration**: Allows quick chart creation and testing before exploring advanced types
+
+**Implementation:**
+```python
+# RECOMMENDED: Start with basic chart types
+supported_viz_types = ['table', 'pie']
+
+chart_result = mcp_superset_chart_create(
+    slice_name="Revenue Analysis",
+    datasource_id=dataset_id,
+    datasource_type="table",
+    viz_type=["table"],  # Use one of the supported types
+    ...
+)
+```
+
+**Advanced Charts:** Once basic charts are working, you can create advanced visualizations through the Superset UI or by updating existing charts with `mcp_superset_chart_update`.
+
+## 4. Chart Testing Methods
+
+### Method 1: Create Test Chart First
+```python
+# Create simple test chart with basic metrics
+test_chart = mcp_superset_chart_create(
+    slice_name="Test Chart - Basic Count",
+    datasource_id=dataset_id,
+    datasource_type="table", 
+    viz_type="table",
+    params={"metrics": ["count"], "groupby": [], "row_limit": 5}
+)
+```
+
+### Method 2: Use SQL Lab for Data Validation
+1. Use `mcp_superset_sqllab_execute_query` to test queries
+2. Verify data exists and columns are accessible
+3. Test aggregations manually before creating charts
+
+### Method 3: Test Chart Data Directly (RECOMMENDED)
+```python
+# Test chart configuration before creating persistent charts
+chart_config = {
+    "datasource_id": dataset_id,
+    "datasource_type": "table",
+    "queries": [{
+        "metrics": [{"label": "Total GMV", "expressionType": "SQL", "sqlExpression": "SUM(gmv)"}],
+        "groupby": ["brand_name"],
+        "filters": [],
+        "row_limit": 10
+    }]
+}
+
+# Get actual chart data to validate configuration
+chart_data_result = mcp_superset_chart_get_data(chart_config=chart_config)
+
+# Validate the results
+if chart_data_result.get('result', {}).get('queries', []):
+    query_result = chart_data_result['result']['queries'][0]
+    
+    # Check if data exists
+    if not query_result.get('data', []):
+        # CRITICAL: Chart will be empty - fix configuration
+        print("WARNING: Chart configuration returns no data")
+    else:
+        # Validate data structure
+        data_rows = query_result['data']
+        print(f"Chart will display {len(data_rows)} rows")
+        print(f"Sample data: {data_rows[0] if data_rows else 'No data'}")
+        
+        # Check for expected columns
+        columns = query_result.get('columns', [])
+        expected_columns = ['brand_name', 'Total GMV']
+        for col in expected_columns:
+            if col not in [c['name'] for c in columns]:
+                print(f"WARNING: Expected column '{col}' missing from results")
+```
+
+**Benefits of Method 3:**
+- ✅ **Real-time Validation**: Test exact chart configuration before creating charts
+- ✅ **Data Structure Check**: Verify columns and data types match expectations  
+- ✅ **Performance Testing**: Check query execution time and data volume
+- ✅ **Error Prevention**: Catch configuration errors before chart creation
+- ✅ **No Persistent Objects**: Test without creating charts that need cleanup
+
+
+
+
+## 5. Post-Creation Testing Workflow
+
+### Complete Validation Example:
+```python
+# 1. Create chart
+chart_result = mcp_superset_chart_create(...)
+chart_id = chart_result['result']['id']
+
+# 2. Test underlying data using chart data API (PREFERRED)
+chart_config = {
+    "datasource_id": dataset_id,
+    "datasource_type": "table", 
+    "queries": [{
+        "metrics": [{"label": "Total GMV", "expressionType": "SQL", "sqlExpression": "SUM(metric_col)"}],
+        "groupby": ["groupby_col"],
+        "filters": [],  # Add any filters from chart config
+        "row_limit": 10
+    }]
+}
+data_test = mcp_superset_chart_get_data(chart_config=chart_config)
+
+# 3. Validate results from chart data API
+if data_test.get('result', {}).get('queries', []):
+    query_result = data_test['result']['queries'][0]
+    if not query_result.get('data', []):
+        # CRITICAL: Chart will be empty - fix data or filters
+        print("WARNING: Chart returns no data - check filters and configuration")
+    else:
+        data_rows = query_result['data']
+        print(f"SUCCESS: Chart will display {len(data_rows)} rows")
+        # Continue with remaining validation steps...
+else:
+    print("ERROR: Invalid chart data response - check configuration")
+    
+# 4. Check time coverage
+time_check = mcp_superset_sqllab_execute_query(
+    database_id=5, 
+    sql="SELECT MIN(date_col), MAX(date_col) FROM table WHERE date_filter"
+)
+
+# 5. Update chart title if needed based on actual coverage
+actual_range = f"{min_date} to {max_date}"
+if actual_range != expected_range:
+    mcp_superset_chart_update(
+        chart_id=chart_id,
+        data={"slice_name": f"Chart Title - {actual_range}"}
+    )
+```
+
+## 6. Working Closely with reorc MCP Semantic to Get/Set Necessary Information
+
+### Integration with reorc Semantic Layer
+
+When creating Superset charts and dashboards, leverage the reorc MCP semantic layer for enhanced data modeling and consistency:
+
+#### **Step 1: Download Semantic Project**
+```bash
+# Always start by downloading the semantic project locally
+python cli.py project download-semantic-project <project_code>
+```
+
+#### **Step 2: Explore Available Semantic Resources**
+Use ReOrc MCP tool: `get_cubes_and_shared_fields` to see available cubes
+
+#### **Step 3: Use Semantic Models as Superset Dataset Sources**
+```python
+# Create Superset datasets based on semantic cube definitions
+for cube in semantic_data['cubes']:
+    # Check if corresponding dataset exists in Superset
+    dataset_result = mcp_superset_dataset_list()
+    
+    # Create dataset if it doesn't exist
+    if cube['table_name'] not in existing_datasets:
+        dataset = mcp_superset_dataset_create(
+            table_name=cube['table_name'],
+            database_id=superset_database_id,
+            schema=cube.get('schema', 'public')
+        )
+        
+        # Refresh dataset columns to sync with semantic model
+        mcp_superset_dataset_refresh_columns(dataset_id=dataset['result']['id'])
+```
+
+#### **Step 4: Leverage Semantic Measures for Chart Metrics**
+```python
+# Use semantic layer measures as chart metrics
+cube_measures = cube.get('measures', [])
+chart_metrics = []
+
+for measure in cube_measures:
+    # Convert semantic measures to Superset metric format
+    metric = {
+        "label": measure.get('label', measure['name']),
+        "expressionType": "SQL",
+        "sqlExpression": measure.get('sql', f"{measure['aggregation_type']}({measure['name']})")
+    }
+    chart_metrics.append(metric)
+
+# Use in chart creation
+chart_config = {
+    "datasource_id": dataset_id,
+    "datasource_type": "table",
+    "queries": [{
+        "metrics": chart_metrics,
+        "groupby": [dim['name'] for dim in cube.get('dimensions', [])[:3]],  # Limit to first 3 dimensions
+        "row_limit": 100
+    }]
+}
+```
+
+#### **Step 5: Preview Semantic Data in Superset**
+```python
+# Preview cube data using Superset's dataset preview
+preview_result = mcp_reorc_preview_cube(
+    project_code="intrepid_superset",
+    cube_name=cube['name'],
+    field_names=[
+        "shop_name",
+        "brand_name", 
+        "m_total_gmv"  # semantic measure
+    ],
+    conditions=[{
+        "field_name": "data_date",
+        "operator": "inDateRange", 
+        "values": ["2024-01-01", "2024-12-31"]
+    }]
+)
+
+# Use preview results to validate data before creating Superset charts
+if preview_result.get('rows'):
+    print(f"Semantic data preview: {len(preview_result['rows'])} rows available")
+    # Proceed with Superset chart creation
+else:
+    print("WARNING: No data available in semantic layer for specified criteria")
+```
+
+#### **Step 6: Sync Semantic Field Definitions**
+```python
+# Update Superset dataset column descriptions with semantic metadata
+for dimension in cube.get('dimensions', []):
+    # Format semantic metadata for Superset
+    description = f"{dimension.get('description', '')}\\n\\nSEMATIC INFO:\\n"
+    description += f"- Type: {dimension.get('type', 'unknown')}\\n"
+    description += f"- Source: {cube['name']} cube\\n"
+    description += f"- SQL: {dimension.get('sql', dimension['name'])}"
+    
+    # Update dataset column (if update tool becomes available)
+    # This ensures Superset users understand the semantic context
+```
+
+### **Best Practices for Semantic Integration:**
+
+✅ **Consistency**: Always use semantic layer field names and definitions in Superset  
+✅ **Validation**: Preview semantic data before creating Superset visualizations  
+✅ **Documentation**: Include semantic metadata in Superset dataset descriptions  
+✅ **Sync Strategy**: Regularly refresh Superset datasets when semantic models change  
+✅ **Error Prevention**: Validate semantic field availability before chart creation  
+
+### **Common Integration Patterns:**
+
+1. **Revenue Analytics**: Use semantic GMV measures with shop/brand dimensions
+2. **Performance Dashboards**: Leverage semantic conversion rate and visitor metrics  
+3. **Time Series Analysis**: Utilize semantic date dimensions with proper time filtering
+4. **Cross-Platform Consistency**: Ensure Superset charts match semantic layer definitions
+
+### **Troubleshooting Integration Issues:**
+
+- **Field Not Found**: Check if semantic model was properly synced to Superset dataset
+- **Data Mismatch**: Verify semantic layer data matches Superset dataset source
+- **Performance Issues**: Use semantic layer preview to optimize field selection
+- **Permission Errors**: Ensure access to both semantic project and Superset database
+

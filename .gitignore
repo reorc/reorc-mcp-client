@@ -1,0 +1,31 @@
+local-cache/*
+
+# Cursor history
+.history/*
+/local-model-projects/*
+/local-source-databases/*
+/local-semantic-projects/*
+**/__pycache__
+
+.idea
+.vscode
+docs.html
+openapi.json
+.cursor/mcp.json
+.venv/
+
+
+# superset-mcp
+# Python-generated files
+superset-mcp/__pycache__/
+superset-mcp/*.py[oc]
+superset-mcp/build/
+superset-mcp/dist/
+superset-mcp/wheels/
+superset-mcp/*.egg-info
+
+# Virtual environments
+superset-mcp/.venv/
+
+# access token
+superset-mcp/.superset_token

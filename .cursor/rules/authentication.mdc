@@ -1,0 +1,88 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+# rule: authorization
+
+## Description
+This rule defines how to automatically extract the access token from the MCP configuration file and handle authentication.
+
+---
+
+## Access Token Extraction
+
+The CLI handles access token extraction automatically. This happens in the following way:
+
+1. The access token is extracted from the file `[PROJECT_ROOT]/.cursor/mcp.json`
+2. The token is embedded in the URL parameter `access_token=` in the server URL
+3. When needed, the token is automatically refreshed using default credentials
+
+### Example Configuration Structure
+```json
+{
+  "mcpServers": {
+    "reorc-mcp": {
+      "transport": "sse",
+      "url": "https://mcp.test.reorc.cloud/mcp?access_token={YOUR_ACCESS_TOKEN}"
+      "auth": {
+        "defaultCredentials": {
+            "email": "{YOUR_REORC_ACCOUNT}",
+            "password": "{YOUR_REORC_PASSWORD}",
+            "tenant_domain": "{TENANT_DOMAIN}"
+        }
+      }
+    }
+  }
+}
+```
+
+## Handling Authentication
+
+use the reorc-mcp-client CLI auth:
+
+```bash
+# Validate your current token
+python cli.py auth validate
+
+# Login and get a new token and then update `[PROJECT_ROOT]/.cursor/mcp.json` 
+python cli.py auth login
+```
+
+These commands handle the complete authentication workflow including:
+- Extracting tokens from configuration files
+- Validating tokens with the server
+- Obtaining new tokens when needed
+- Updating configuration files
+- Using default credentials when available
+
+## MANDATORY: Validating the Token
+
+Always validate your token before performing operations:
+
+```bash
+# Validate the token
+python cli.py auth validate
+
+# If validation fails, login to get a new token
+python cli.py auth login
+```
+
+## Handling Expired, Invalid, or Empty Access Tokens
+
+If you encounter authentication errors:
+
+```bash
+# Login to refresh your token
+python cli.py auth login
+
+# Or login with specific credentials
+python cli.py auth login --email user@example.com --password mysecret --tenant example
+```
+
+This will:
+1. Attempt to use default credentials from the config file if available
+2. Prompt for credentials if needed
+3. Obtain a new token
+4. Update the configuration file
+5. Validate the new token

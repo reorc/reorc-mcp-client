@@ -1,0 +1,139 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+# rule: cli_commands
+
+## Description
+Guidelines for running CLI commands in the reorc-mcp-client project with cross-platform support.
+
+---
+
+## Python Environment Setup
+
+### Cross-Platform Python Detection
+- On Windows: Use `python` command (default installation)
+- On macOS/Linux: Use `python3` command or `python` if aliased
+- The CLI automatically detects the appropriate Python command for your system
+
+### Python Environment Requirements
+1. **Python Version**: Ensure Python 3.11+ is installed
+   - Windows: Download from [python.org](https://python.org) or use Microsoft Store
+   - macOS: Use homebrew `brew install python` or download from python.org
+   - Linux: Use package manager `apt install python3` or `yum install python3`
+
+2. **Virtual Environment Setup** (Recommended):
+   ```bash
+   # Create virtual environment
+   python -m venv .venv
+   
+   # Activate virtual environment
+   # Windows:
+   .venv\Scripts\activate
+   # macOS/Linux:
+   source .venv/bin/activate
+   
+   # Install dependencies
+   pip install -r requirements.txt
+   ```
+
+3. **Verify Installation**:
+   ```bash
+   python --version  # Should show Python 3.11+
+   pip --version     # Should show pip version
+   ```
+
+## CLI Command Execution
+
+### Base Path Requirements
+- ALWAYS run CLI commands from the project root: `./reorc-mcp-client`
+
+### Command Structure
+- All CLI commands should be run using the pattern: `python cli.py <operation> <command> [arguments]`
+- Example: `python cli.py git status dbt_advanced_test`
+- Note: Use `python` instead of `python3` for better Windows compatibility
+
+### Common CLI Operations
+1. **Authentication Operations**:
+   ```bash
+   # Validate token
+   python cli.py auth validate
+   
+   # Login
+   python cli.py auth login
+   ```
+
+2. **File Operations**:
+   ```bash
+   # List files
+   python cli.py file list <project_code> [--path <directory>]
+   
+   # Read file
+   python cli.py file read <project_code> <file_path>
+   
+   # Write file
+   python cli.py file write <project_code> <file_path> [--content "content"]
+   ```
+
+3. **Git Operations**:
+   ```bash
+   # Get status
+   python cli.py git status <project_code>
+   
+   # Commit changes
+   python cli.py git commit <project_code> "<message>"
+   ```
+
+4. **Project Operations**:
+   ```bash
+   # Download project locally
+   python cli.py project download <project_code>
+   
+   # List and cache raw data sources (PREFERRED for source discovery)
+   python cli.py project list-sources <project_code>
+   
+   # Refresh sources from database
+   python cli.py project refresh-sources <project_code>
+   
+   # Commit local changes to git (REQUIRED before using MCP tools to sync to server)
+   python cli.py project commit <project_code> --message "Your commit message"
+   python cli.py project commit <project_code> --auto-commit "auto"  # Auto-generated message
+   python cli.py project commit <project_code> --models model1,model2 --message "Update specific models"
+   ```
+
+### Error Handling
+- If a command fails, check if:
+  1. You're in the right directory (root project directory)
+  2. The authentication token is valid (use `auth validate`)
+  3. Project code, file paths, or other arguments are correct
+
+### Cross-Platform Considerations
+
+#### Windows Specific Notes
+- Use `curl.exe` if curl is not available in PATH (install via chocolatey or manually)
+- PowerShell and Command Prompt both supported
+- Use forward slashes or double backslashes in file paths
+- Virtual environment activation: `.venv\Scripts\activate`
+
+#### macOS/Linux Specific Notes  
+- `curl` is usually pre-installed
+- Use `python3` if `python` command is not available
+- Virtual environment activation: `source .venv/bin/activate`
+
+### Best Practices
+- If there is no access token or got invalid/expired token error, call `python cli.py auth login`
+- When in doubt about command syntax, use `python cli.py <operation> --help`
+- For complex file paths, use absolute paths if possible
+- **ALWAYS commit changes locally before syncing to server**:
+  1. Use `python cli.py project commit <project_code>` to commit local changes
+  2. Then use MCP tools (create_model, update_model) to sync individual models to server
+- Always use descriptive commit messages or use the --auto-commit flag to generate a timestamped message
+- After syncing changes, verify the changes were applied correctly by checking model details
+
+### Environment Detection and Setup
+The CLI automatically handles cross-platform differences:
+- Detects the appropriate Python command (`python` vs `python3`)
+- Uses platform-specific path separators
+- Handles virtual environment activation commands
+- Ensures `curl` availability across platforms
